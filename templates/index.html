@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vintage MiniCompiler</title>
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Special Elite', monospace;
+      text-align: center;
+      background-image: url('{{ url_for("static", filename="images/vintage_paper.jpg") }}');
+      background-size: cover;
+      background-attachment: fixed;
+      color: #3e2f1c;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background-color: rgba(255, 255, 255, 0.7);
+      padding: 20px;
+      border-bottom: 3px dashed #7c5c3b;
+    }
+
+    header img {
+      max-height: 100px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 10px;
+      font-size: 2.5em;
+      color: #5a3d2b;
+      text-shadow: 1px 1px #fff;
+    }
+
+    textarea {
+      width: 80%;
+      height: 200px;
+      background: #fcf5e5;
+      color: #3e2f1c;
+      border: 2px dashed #7c5c3b;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 1em;
+      margin-top: 25px;
+      box-shadow: inset 2px 2px 5px #aaa;
+    }
+
+    .btn-group {
+      margin-top: 20px;
+    }
+
+    button {
+      background-color: #e0c59a;
+      color: #3e2f1c;
+      border: 1px solid #a9885a;
+      border-radius: 5px;
+      padding: 10px 16px;
+      margin: 8px;
+      font-size: 1em;
+      cursor: pointer;
+      font-weight: bold;
+      box-shadow: 1px 1px 2px #444;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #cbb07a;
+    }
+
+    .output {
+      width: 85%;
+      background: #1a1a1a;
+      color: #00ff33;
+      text-align: left;
+      padding: 18px;
+      margin: 30px auto;
+      border-radius: 8px;
+      border: 3px double #3e2f1c;
+      font-family: 'Courier New', monospace;
+      font-size: 1em;
+      white-space: pre-wrap;
+      box-shadow: 0 0 15px #000;
+    }
+
+    .output-label {
+      font-weight: bold;
+      color: #ffcc00;
+      margin-bottom: 8px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header>
+  
+    <h1>Vintage MiniCompiler</h1>
+  </header>
+
+  <textarea id="code" placeholder="Enter your retro code here..."></textarea>
+
+  <div class="btn-group">
+    <button onclick="compile('tokenize')">🧩 Tokenize</button>
+    <button onclick="compile('parse')">📐 Parse</button>
+    <button onclick="compile('semantic')">🧠 Semantic</button>
+    <button onclick="compile('intermediate')">⚙️ Intermediate</button>
+    <button onclick="compile('assembly')">💾 Assembly</button>
+    <button onclick="window.location.href='/rules'">📖 Language Rules</button>
+  </div>
+
+  <div class="output">
+    <span class="output-label">Output:</span>
+    <pre id="output">{{ output if output else '' }}</pre>
+  </div>
+
+  <script>
+    function compile(action) {
+      const code = document.getElementById("code").value;
+      document.getElementById("output").innerText = "Processing...";
+      fetch("/compile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code: code, action: action }),
+      })
+      .then((response) => response.json())
+      .then((data) => {
+        document.getElementById("output").innerText = data.output;
+      })
+      .catch((err) => {
+        document.getElementById("output").innerText = "Error: " + err;
+      });
+    }
+  </script>
+</body>
+</html>

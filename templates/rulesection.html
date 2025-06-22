@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Custom Language Grammar Rules</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Roboto Slab', Georgia, serif;
+      background: #fdf6e3;
+      color: #4b3c2a;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: linear-gradient(to right, #d5c4a1, #f4e8d4);
+      padding: 0;
+      position: relative;
+      border-bottom: 2px solid #c0a878;
+    }
+
+    .header-image {
+      width: 100%;
+      max-height: 240px;
+      object-fit: cover;
+      border-radius: 0 0 1.5rem 1.5rem;
+      box-shadow: 0 8px 20px rgba(120, 96, 40, 0.15);
+      opacity: 0.85;
+    }
+
+    .header-content {
+      position: absolute;
+      top: 40px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      z-index: 2;
+    }
+
+    .header-content h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin: 0.2em 0 0.1em 0;
+      color: #5a4226;
+      text-shadow: 0 1px 1px rgba(255, 255, 255, 0.6);
+    }
+
+    .header-content p {
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: #6a5840;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 3.5rem auto 2rem auto;
+      background: #fffaf3;
+      border: 1px solid #e4dcc5;
+      border-radius: 1.2rem;
+      padding: 2.5rem;
+      box-shadow: 0 4px 12px rgba(120, 96, 40, 0.08);
+    }
+
+    h2, h3 {
+      color: #5e4425;
+      border-bottom: 2px solid #d4ba94;
+      padding-bottom: 0.3rem;
+      margin-top: 2.2rem;
+    }
+
+    code, pre {
+      background: #f7f1e1;
+      color: #44372d;
+      padding: 0.25em 0.45em;
+      border-radius: 4px;
+      font-size: 1em;
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    pre {
+      display: block;
+      padding: 1em;
+      margin: 1em 0;
+      font-size: 1.05em;
+      overflow-x: auto;
+      border-left: 4px solid #c7aa73;
+      background: #fff8e6;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fdf6e3;
+      margin: 1.5em 0;
+      border-radius: 0.6em;
+      box-shadow: 0 2px 4px rgba(95, 85, 55, 0.05);
+    }
+
+    th, td {
+      border: 1px solid #ddcba3;
+      padding: 0.9em;
+      text-align: left;
+    }
+
+    th {
+      background: #f0e6d2;
+      color: #594c3b;
+    }
+
+    ul {
+      margin-left: 1.5em;
+    }
+
+    .token-list {
+      columns: 2;
+      margin-bottom: 1em;
+    }
+
+    .section-img {
+      display: block;
+      margin: 0 auto 1.2em auto;
+      max-width: 170px;
+      border-radius: 1em;
+      box-shadow: 0 2px 12px rgba(120, 96, 40, 0.1);
+    }
+
+    .note-box {
+      background: #f6efdc;
+      border-left: 5px solid #c7aa73;
+      padding: 1em 1.5em;
+      border-radius: 0.7em;
+      margin: 1.5em 0;
+      color: #4e3b26;
+      font-size: 1.05em;
+    }
+
+    .icon {
+      width: 30px;
+      height: 30px;
+      vertical-align: middle;
+      margin-right: 8px;
+      stroke: #5e4226;
+    }
+
+    @media (max-width: 700px) {
+      main {
+        padding: 1.2rem;
+      }
+      .token-list {
+        columns: 1;
+      }
+      .header-content h1 {
+        font-size: 2rem;
+      }
+      .header-content p {
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+    <header>
+    <h1>Custom Language Grammar Rules</h1>
+    <p>A beautiful summary of the syntax and structure of your custom programming language.</p>
+  </header>
+  <main>
+    <img class="section-img" src="https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=400&q=80" alt="Tokens">
+    <h2>Token Types</h2>
+    <ul class="token-list">
+      <li><strong>Keywords:</strong> <code>var</code>, <code>print</code>, <code>if</code>, <code>else</code>, <code>return</code></li>
+      <li><strong>Identifiers:</strong> Variable names (e.g., <code>x</code>, <code>foo</code>)</li>
+      <li><strong>Literals:</strong> Numbers (e.g., <code>42</code>), Strings (e.g., <code>"hello"</code>)</li>
+      <li><strong>Operators:</strong> <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code></li>
+      <li><strong>Comparisons:</strong> <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></li>
+      <li><strong>Assignment:</strong> <code>=</code></li>
+      <li><strong>Delimiters:</strong> <code>(</code>, <code>)</code>, <code>{</code>, <code>}</code>, <code>;</code></li>
+    </ul>
+
+    <img class="section-img" src="https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=400&q=80" alt="Grammar">
+    <h2>Grammar Rules (EBNF)</h2>
+    <pre><code>program         ::= { statement }
+statement       ::= declaration | print_stmt | if_stmt | return_stmt
+declaration     ::= 'var' identifier [ '=' expression ] ';'
+print_stmt      ::= 'print' expression ';'
+return_stmt     ::= 'return' expression ';'
+if_stmt         ::= 'if' '(' expression ')' '{' block '}' [ 'else' '{' block '}' ]
+block           ::= { statement }
+expression      ::= primary { (op | compare) expression }
+primary         ::= identifier | number | '(' expression ')'</code></pre>
+
+    <img class="section-img" src="https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=400&q=80" alt="Statements">
+    <h2>Statement Types</h2>
+    <table>
+      <tr>
+        <th>Type</th>
+        <th>Syntax Example</th>
+        <th>Description</th>
+      </tr>
+      <tr>
+        <td>Variable Declaration</td>
+        <td><code>var x = 5;</code></td>
+        <td>Declares a variable, optionally with initialization</td>
+      </tr>
+      <tr>
+        <td>Print Statement</td>
+        <td><code>print x + 1;</code></td>
+        <td>Prints the result of an expression</td>
+      </tr>
+      <tr>
+        <td>Return Statement</td>
+        <td><code>return x;</code></td>
+        <td>Returns the value of an expression</td>
+      </tr>
+      <tr>
+        <td>If/Else Statement</td>
+        <td><code>if (x &gt; 0) { ... } else { ... }</code></td>
+        <td>Conditional branching</td>
+      </tr>
+      <tr>
+        <td>Block</td>
+        <td><code>{ ... }</code></td>
+        <td>Groups statements together</td>
+      </tr>
+      <tr>
+        <td>Expression</td>
+        <td><code>x + y * 2</code></td>
+        <td>Arithmetic and comparison</td>
+      </tr>
+    </table>
+
+    <img class="section-img" src="https://images.unsplash.com/photo-1461344577544-4e5dc9487184?auto=format&fit=crop&w=400&q=80" alt="Operator precedence">
+    <h2>Operator Precedence</h2>
+    <ul>
+      <li><strong>Highest:</strong> <code>*</code>, <code>/</code></li>
+      <li><strong>Medium:</strong> <code>+</code>, <code>-</code></li>
+      <li><strong>Lowest:</strong> Comparisons (<code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>)</li>
+    </ul>
+
+    <img class="section-img" src="https://images.unsplash.com/photo-1464983953574-0892a716854b?auto=format&fit=crop&w=400&q=80" alt="Sample program">
+    <h2>Sample Program</h2>
+    <pre><code>var x = 10;
+var y;
+print x + 5;
+if (x &gt; 0) {
+  print x;
+} else {
+  print 0;
+}
+return x * 2;</code></pre>
+
+    <div class="note-box">
+      <h3>Notes</h3>
+      <ul>
+        <li>All statements end with a semicolon <code>;</code>.</li>
+        <li>Blocks are enclosed in curly braces <code>{ ... }</code>.</li>
+        <li>Expressions can use parentheses for grouping.</li>
+        <li>Error handling is built-in for missing semicolons, unmatched braces, and invalid tokens.</li>
+      </ul>
+    </div>
+  </main>
+</body>
+</html>
