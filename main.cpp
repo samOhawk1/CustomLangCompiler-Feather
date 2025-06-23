@@ -5,19 +5,20 @@
 #include <map>
 #include <memory>
 #include <cctype>
-#include <cstring>
-#include <utility> // For std::move
+#include <cstring> 
+#include <algorithm> 
+#include <set> 
 
-// Token types
+
 enum class TokenType {
     VAR, PRINT, IF, ELSE, RETURN,
-    ID, NUMBER, STRING,
+    ID, NUMBER, STRING, 
     OP, COMPARE, ASSIGN,
     LPAREN, RPAREN, LBRACE, RBRACE, SEMI,
     END
 };
 
-// Token structure
+
 struct Token {
     TokenType type;
     std::string value;
@@ -28,16 +29,16 @@ struct Token {
         : type(t), value(v), line(l), column(c) {}
 };
 
-// AST Node structure
+
 struct ASTNode {
     std::string nodeType;
     std::vector<std::unique_ptr<ASTNode>> children;
     std::string value;
-    std::string dataType; // Added for semantic analysis (e.g., "int", "string")
     int indentLevel = 0;
+    std::string dataType; 
 
-    ASTNode(std::string type, std::string val = "", std::string dType = "")
-        : nodeType(std::move(type)), value(std::move(val)), dataType(std::move(dType)) {}
+    ASTNode(std::string type, std::string val = "")
+        : nodeType(std::move(type)), value(std::move(val)), dataType("") {}
 
     void addChild(std::unique_ptr<ASTNode> child) {
         child->indentLevel = indentLevel + 1;
@@ -45,39 +46,48 @@ struct ASTNode {
     }
 };
 
-// Compiler class
+
 class MiniCompiler {
 private:
     std::vector<Token> tokens;
     size_t currentTokenIndex = 0;
-    // Changed symbol table to store type as well
-    std::map<std::string, std::string> symbolTable; // varName -> type (e.g., "int", "string")
+    
+    std::map<std::string, std::string> symbolTable;
     std::vector<std::string> errors;
     std::vector<std::string> intermediateCode;
     std::vector<std::string> assemblyCode;
     std::unique_ptr<ASTNode> ast;
 
-    // Helper functions
+    
+    std::map<std::string, std::string> stringLiteralsToLabels; 
+    int stringLiteralCount = 0;
+
+    
+    std::set<std::string> dataSectionVariables; 
+
+    
+    bool needsPrintInt = false;
+    bool needsPrintString = false;
+
+    
     void addError(const std::string& error) { errors.push_back(error); }
     void addToken(TokenType type, const std::string& value, int line, int column) { tokens.emplace_back(type, value, line, column); }
     void addIntermediateCode(const std::string& code) { intermediateCode.push_back(code); }
     void addAssemblyCode(const std::string& code) { assemblyCode.push_back(code); }
-    // Modified to store type
+    
     void addSymbol(const std::string& key, const std::string& type) { symbolTable[key] = type; }
-    bool symbolExists(const std::string& key) const { return symbolTable.count(key) > 0; }
+    
     std::string getSymbolType(const std::string& key) const {
         auto it = symbolTable.find(key);
-        if (it != symbolTable.end()) {
-            return it->second;
-        }
-        return ""; // Not found
+        if (it != symbolTable.end()) return it->second;
+        return ""; 
     }
+    bool symbolExists(const std::string& key) const { return symbolTable.count(key); }
 
-
-    // Tokenizer
+    
     void tokenize(const std::string& source);
 
-    // Parser
+    
     const Token& currentToken() const;
     void advance();
     int getPrecedence(const std::string& op) const;
@@ -85,22 +95,26 @@ private:
     std::unique_ptr<ASTNode> parsePrimary();
     std::unique_ptr<ASTNode> parseDeclaration();
     std::unique_ptr<ASTNode> parsePrint();
-    std::unique_ptr<ASTNode> parseReturn();
+    std::unique_ptr<ASTNode> parseReturn(); 
     std::unique_ptr<ASTNode> parseIfElse();
     std::unique_ptr<ASTNode> parseProgramBlock();
     std::unique_ptr<ASTNode> parseProgram();
 
-    // Semantic Analysis
-    std::string semanticAnalyzeExpression(ASTNode* node); // Returns type of expression
+    
     void semanticAnalysis(ASTNode* node);
+    
+    std::string getTypeOfExpression(ASTNode* node);
 
-    // Intermediate Code Generation
-    std::string generateIntermediateCode(ASTNode* node, int& tempCount, int& labelCount); // Returns the result variable/value
 
-    // Assembly Code Generation
-    void generateAssembly(ASTNode* node, int& regCount);
+    
+    void generateIntermediateCode(ASTNode* node, int& tempCount, int& labelCount);
 
-    // Print functions
+    
+    void generateDataSection();
+    void generateRuntimeFunctions(); 
+    void generateAssembly(ASTNode* node, int& regCount); 
+
+    
     void printTokens() const;
     void printErrors() const;
     void printAST(const ASTNode* node) const;
@@ -111,7 +125,7 @@ public:
     bool hasErrors() const { return !errors.empty(); }
 };
 
-// Implementation
+
 
 void MiniCompiler::compile(const std::string& filename) {
     std::ifstream file(filename);
@@ -134,6 +148,11 @@ void MiniCompiler::compile(const std::string& filename) {
     intermediateCode.clear();
     assemblyCode.clear();
     ast.reset();
+    stringLiteralsToLabels.clear();
+    stringLiteralCount = 0;
+    dataSectionVariables.clear();
+    needsPrintInt = false;   
+    needsPrintString = false; 
 
     std::cout << "=== Lexical Analysis (Tokenization) ===" << std::endl;
     tokenize(sourceCode);
@@ -182,97 +201,24 @@ void MiniCompiler::compile(const std::string& filename) {
         std::cout << i << ": " << intermediateCode[i] << std::endl;
     }
 
-    std::cout << "\n=== Assembly Code Generation ===" << std::endl;
-    int regCount = 0;
-    // Add data section for strings and variables
+    
     addAssemblyCode("section .data");
-    for(const auto& entry : symbolTable) {
-        if (entry.second == "int") {
-            addAssemblyCode(entry.first + " dd 0"); // Define a double word for int variables
-        } else if (entry.second == "string") {
-            // For simplicity, we'll store string literals inline in .data
-            // Real compilers would manage a string pool.
-            // Placeholder: Assume strings passed to print are immediate.
-        }
-    }
-    // Add any specific string literals as data
-    // This is a basic approach; a real compiler would optimize string constant storage.
-    // For now, if string literals are processed directly, they might not need explicit .data entries
-    // unless they are assigned to variables.
-    // Example: global_string_0 db "hello world", 0
-    // We will generate these as needed during assembly generation if they are used by print directly.
+    generateDataSection(); 
+    addAssemblyCode("\nsection .text");
+    addAssemblyCode("global _start");
+    addAssemblyCode("_start:");
 
-    addAssemblyCode("section .text");
-    addAssemblyCode("global _start"); // For Linux executables
-
-    addAssemblyCode("_start:"); // Entry point
+    int regCount = 0; 
     generateAssembly(ast.get(), regCount);
-    addAssemblyCode("mov eax, 1"); // sys_exit
-    addAssemblyCode("xor ebx, ebx"); // exit code 0
-    addAssemblyCode("int 0x80"); // call kernel
 
-    // Basic print_int and print_string implementations (for Linux x86 NASM)
-    // These are highly simplified and would typically come from a runtime library.
-    addAssemblyCode("");
-    addAssemblyCode("print_int:");
-    addAssemblyCode("    push ebp");
-    addAssemblyCode("    mov ebp, esp");
-    addAssemblyCode("    push eax"); // Value to print
-    addAssemblyCode("    mov ecx, esp");
-    addAssemblyCode("    sub esp, 4"); // For character buffer
-    addAssemblyCode("    mov edi, esp");
-    addAssemblyCode("    mov esi, 0"); // Length counter
-    addAssemblyCode("    cmp dword [ecx], 0");
-    addAssemblyCode("    jge .print_pos");
-    addAssemblyCode("    neg dword [ecx]");
-    addAssemblyCode("    mov byte [edi], '-'");
-    addAssemblyCode("    inc edi");
-    addAssemblyCode("    inc esi");
-    addAssemblyCode(".print_pos:");
-    addAssemblyCode("    mov ebx, 10");
-    addAssemblyCode("    mov edx, 0");
-    addAssemblyCode("    div ebx");
-    addAssemblyCode("    add edx, '0'");
-    addAssemblyCode("    push edx");
-    addAssemblyCode("    inc esi");
-    addAssemblyCode("    cmp eax, 0");
-    addAssemblyCode("    jne .print_pos");
-    addAssemblyCode(".print_loop:");
-    addAssemblyCode("    pop edx");
-    addAssemblyCode("    mov byte [edi], dl");
-    addAssemblyCode("    inc edi");
-    addAssemblyCode("    loop .print_loop");
-    addAssemblyCode("    mov eax, 4"); // sys_write
-    addAssemblyCode("    mov ebx, 1"); // stdout
-    addAssemblyCode("    mov ecx, esp");
-    addAssemblyCode("    mov edx, esi");
-    addAssemblyCode("    int 0x80");
-    addAssemblyCode("    add esp, 4");
-    addAssemblyCode("    pop eax"); // Restore original eax
-    addAssemblyCode("    pop ebp");
-    addAssemblyCode("    ret");
+    
+    addAssemblyCode("mov eax, 1"); 
+    addAssemblyCode("xor ebx, ebx"); 
+    addAssemblyCode("int 0x80");
 
-    addAssemblyCode("");
-    addAssemblyCode("print_string:");
-    addAssemblyCode("    push ebp");
-    addAssemblyCode("    mov ebp, esp");
-    addAssemblyCode("    push eax"); // String address
-    addAssemblyCode("    mov ecx, eax");
-    addAssemblyCode("    xor edx, edx"); // Length
-    addAssemblyCode(".string_len_loop:");
-    addAssemblyCode("    cmp byte [ecx + edx], 0");
-    addAssemblyCode("    je .string_len_end");
-    addAssemblyCode("    inc edx");
-    addAssemblyCode("    jmp .string_len_loop");
-    addAssemblyCode(".string_len_end:");
-    addAssemblyCode("    mov eax, 4"); // sys_write
-    addAssemblyCode("    mov ebx, 1"); // stdout
-    addAssemblyCode("    int 0x80");
-    addAssemblyCode("    pop eax"); // Restore original eax
-    addAssemblyCode("    pop ebp");
-    addAssemblyCode("    ret");
+    generateRuntimeFunctions(); 
 
-
+    std::cout << "\n=== Assembly Code Generation ===" << std::endl;
     for (const auto& code : assemblyCode) {
         std::cout << code << std::endl;
     }
@@ -332,7 +278,7 @@ void MiniCompiler::tokenize(const std::string& source) {
             }
             value = source.substr(tokenStart, pos - tokenStart);
             type = TokenType::STRING;
-            pos++;
+            pos++; 
         }
         else if (std::strchr("+-*/", source[pos])) {
             value = source.substr(pos, 1);
@@ -344,33 +290,25 @@ void MiniCompiler::tokenize(const std::string& source) {
                 value = source.substr(pos, 2);
                 pos += 2;
                 type = TokenType::COMPARE;
-            } else if (source[pos] == '=') { // Handle single '=' for assignment separately from comparisons
+            } else {
                 value = source.substr(pos, 1);
                 pos++;
-                type = TokenType::ASSIGN;
-            }
-            else { // Single < or >
-                value = source.substr(pos, 1);
-                pos++;
-                type = TokenType::COMPARE;
+                type = (value == "=") ? TokenType::ASSIGN : TokenType::COMPARE;
             }
         }
         else {
             switch (source[pos]) {
+                case '=': type = TokenType::ASSIGN; value = source.substr(pos, 1); pos++; break;
                 case '(': type = TokenType::LPAREN; value = source.substr(pos, 1); pos++; break;
                 case ')': type = TokenType::RPAREN; value = source.substr(pos, 1); pos++; break;
                 case '{': type = TokenType::LBRACE; value = source.substr(pos, 1); pos++; break;
                 case '}': type = TokenType::RBRACE; value = source.substr(pos, 1); pos++; break;
                 case ';': type = TokenType::SEMI; value = source.substr(pos, 1); pos++; break;
                 default: {
-                    std::string error = "Illegal character '\\x";
-                    char buf[3];
-                    snprintf(buf, sizeof(buf), "%02x", (unsigned char)source[pos]);
-                    error += buf;
-                    error += "' at line " + std::to_string(line) +
-                                ", column " + std::to_string(pos - lineStart);
+                    std::string error = "Illegal character '" + source.substr(pos, 1) + "' at line " + std::to_string(line) +
+                                         ", column " + std::to_string(pos - lineStart);
                     addError(error);
-                    pos++;
+                    pos++; 
                     continue;
                 }
             }
@@ -387,7 +325,7 @@ const Token& MiniCompiler::currentToken() const {
 }
 
 void MiniCompiler::advance() {
-    if (currentTokenIndex < tokens.size()) { // Allow advancing past the last token for END
+    if (currentTokenIndex < tokens.size()) { 
         currentTokenIndex++;
     }
 }
@@ -409,11 +347,11 @@ std::unique_ptr<ASTNode> MiniCompiler::parsePrimary() {
         advance();
     }
     else if (token.type == TokenType::NUMBER) {
-        node = std::make_unique<ASTNode>("NumberLiteral", token.value, "int"); // Assign type "int"
+        node = std::make_unique<ASTNode>("NumberLiteral", token.value);
         advance();
     }
-    else if (token.type == TokenType::STRING) { // Added for string literals
-        node = std::make_unique<ASTNode>("StringLiteral", token.value, "string"); // Assign type "string"
+    else if (token.type == TokenType::STRING) { 
+        node = std::make_unique<ASTNode>("StringLiteral", token.value);
         advance();
     }
     else if (token.type == TokenType::LPAREN) {
@@ -421,13 +359,13 @@ std::unique_ptr<ASTNode> MiniCompiler::parsePrimary() {
         node = parseExpression(0);
         if (!node) return nullptr;
         if (currentToken().type != TokenType::RPAREN) {
-            addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ')' after expression");
+            addError("Expected ')' after expression at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
             return nullptr;
         }
         advance();
     }
     else {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected identifier, number, string, or '('");
+        addError("Expected identifier, number, string, or '(' at line " + std::to_string(token.line) + ", column " + std::to_string(token.column));
         return nullptr;
     }
     return node;
@@ -437,6 +375,15 @@ std::unique_ptr<ASTNode> MiniCompiler::parseExpression(int minPrec) {
     auto left = parsePrimary();
     if (!left) return nullptr;
 
+    
+    if (left->nodeType == "StringLiteral" || (left->nodeType == "Identifier" && getSymbolType(left->value) == "string")) {
+        if (currentToken().type == TokenType::OP || currentToken().type == TokenType::COMPARE) {
+            addError("Cannot perform arithmetic or comparison on string literal/variable at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+            return nullptr;
+        }
+        return left;
+    }
+
     while (true) {
         const Token& token = currentToken();
         if (token.type != TokenType::OP && token.type != TokenType::COMPARE) break;
@@ -445,17 +392,8 @@ std::unique_ptr<ASTNode> MiniCompiler::parseExpression(int minPrec) {
         int prec = getPrecedence(op);
         if (prec < minPrec) break;
 
-        // Special handling for assignment: it's right-associative and low precedence
-        if (token.type == TokenType::ASSIGN) {
-            // Assignment is handled as a statement, not an expression in this grammar,
-            // so this path won't be taken for 'ID = Expr' directly.
-            // If we allow 'a = b = 5', this needs more thought.
-            // For now, expressions are arithmetic/comparison.
-            break;
-        }
-
         advance();
-        auto right = parseExpression(prec + 1); // For binary operators, recursive call to parse right operand
+        auto right = parseExpression(prec + 1);
         if (!right) return nullptr;
 
         auto bin = std::make_unique<ASTNode>("BinaryExpr", op);
@@ -467,59 +405,49 @@ std::unique_ptr<ASTNode> MiniCompiler::parseExpression(int minPrec) {
 }
 
 std::unique_ptr<ASTNode> MiniCompiler::parseDeclaration() {
-    advance(); // skip 'var'
+    advance(); 
     if (currentToken().type != TokenType::ID) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected identifier after 'var'");
+        addError("Expected identifier after 'var' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
 
     std::string varName = currentToken().value;
+    
+    dataSectionVariables.insert(varName);
+
     advance();
     std::unique_ptr<ASTNode> expr;
 
     if (currentToken().type == TokenType::ASSIGN) {
         advance();
-        expr = parseExpression(0); // Parse the expression for assignment
+        expr = parseExpression(0);
         if (!expr) {
-            addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid expression in declaration assignment");
+            addError("Invalid expression in declaration for '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
             return nullptr;
         }
     }
 
     if (currentToken().type != TokenType::SEMI) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ';' at end of declaration");
+        addError("Expected ';' at end of declaration for '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
 
     auto decl = std::make_unique<ASTNode>("Declaration", varName);
-    if (expr) decl->addChild(std::move(expr)); // The expression is the initializer
+    if (expr) decl->addChild(std::move(expr));
     return decl;
 }
 
 std::unique_ptr<ASTNode> MiniCompiler::parsePrint() {
-    advance(); // skip 'print'
-    if (currentToken().type != TokenType::LPAREN) { // Assume print takes an expression in parentheses
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '(' after 'print'");
-        return nullptr;
-    }
-    advance();
-
+    advance(); 
     auto expr = parseExpression(0);
     if (!expr) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid expression in print statement");
+        addError("Invalid expression in print statement at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
-
-    if (currentToken().type != TokenType::RPAREN) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ')' after print expression");
-        return nullptr;
-    }
-    advance();
-
 
     if (currentToken().type != TokenType::SEMI) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ';' after print statement");
+        addError("Expected ';' after print statement at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
@@ -530,14 +458,14 @@ std::unique_ptr<ASTNode> MiniCompiler::parsePrint() {
 }
 
 std::unique_ptr<ASTNode> MiniCompiler::parseReturn() {
-    advance(); // skip 'return'
+    advance(); 
     auto expr = parseExpression(0);
     if (!expr) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid expression in return statement");
+        addError("Invalid expression in return statement at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     if (currentToken().type != TokenType::SEMI) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ';' after 'return'");
+        addError("Expected ';' after 'return' statement at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
@@ -548,43 +476,43 @@ std::unique_ptr<ASTNode> MiniCompiler::parseReturn() {
 }
 
 std::unique_ptr<ASTNode> MiniCompiler::parseIfElse() {
-    advance(); // skip 'if'
+    advance(); 
     if (currentToken().type != TokenType::LPAREN) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '(' after 'if'");
+        addError("Expected '(' after 'if' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
 
     auto cond = parseExpression(0);
     if (!cond) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid condition in if statement");
+        addError("Invalid condition in if statement at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     if (currentToken().type != TokenType::RPAREN) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ')' after condition");
+        addError("Expected ')' after condition at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
 
     if (currentToken().type != TokenType::LBRACE) {
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '{' after 'if' condition");
+        addError("Expected '{' after 'if' condition at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
         return nullptr;
     }
     advance();
 
     auto ifBlock = parseProgramBlock();
-    if (!ifBlock) return nullptr;
+    if (!ifBlock) return nullptr; 
 
     if (currentToken().type == TokenType::ELSE) {
-        advance();
+        advance(); 
         if (currentToken().type != TokenType::LBRACE) {
-            addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '{' after 'else'");
+            addError("Expected '{' after 'else' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
             return nullptr;
         }
         advance();
 
         auto elseBlock = parseProgramBlock();
-        if (!elseBlock) return nullptr;
+        if (!elseBlock) return nullptr; 
 
         auto ifNode = std::make_unique<ASTNode>("IfElse");
         ifNode->addChild(std::move(cond));
@@ -605,48 +533,58 @@ std::unique_ptr<ASTNode> MiniCompiler::parseProgramBlock() {
         switch (currentToken().type) {
             case TokenType::VAR:
                 if (auto decl = parseDeclaration()) block->addChild(std::move(decl));
+                else { /* Error already added by parseDeclaration, attempt recovery */ advance(); }
                 break;
             case TokenType::PRINT:
                 if (auto prt = parsePrint()) block->addChild(std::move(prt));
+                else { /* Error already added by parsePrint, attempt recovery */ advance(); }
                 break;
             case TokenType::IF:
                 if (auto ifstmt = parseIfElse()) block->addChild(std::move(ifstmt));
+                else { /* Error already added by parseIfElse, attempt recovery */ advance(); }
                 break;
             case TokenType::RETURN:
                 if (auto ret = parseReturn()) block->addChild(std::move(ret));
+                else { /* Error already added by parseReturn, attempt recovery */ advance(); }
                 break;
-            case TokenType::ID: { // Handle assignment statements like 'a = 5;'
+            case TokenType::ID: 
+            {
                 std::string varName = currentToken().value;
                 advance();
                 if (currentToken().type != TokenType::ASSIGN) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '=' for assignment");
-                    return nullptr; // Error, break parsing
+                    addError("Expected '=' after identifier in assignment at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                    
+                    while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::RBRACE && currentToken().type != TokenType::END) { advance(); }
+                    if (currentToken().type == TokenType::SEMI) advance(); 
+                    break;
                 }
-                advance(); // Skip '='
+                advance();
                 auto expr = parseExpression(0);
                 if (!expr) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid expression in assignment");
-                    return nullptr; // Error, break parsing
+                    addError("Invalid expression in assignment to '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                    break;
                 }
                 if (currentToken().type != TokenType::SEMI) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ';' at end of assignment");
-                    return nullptr; // Error, break parsing
+                    addError("Expected ';' at end of assignment to '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                    break;
                 }
-                advance(); // Skip ';'
+                advance();
                 auto assignNode = std::make_unique<ASTNode>("Assignment", varName);
                 assignNode->addChild(std::move(expr));
                 block->addChild(std::move(assignNode));
-                break;
             }
+            break;
             default:
-                addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Unexpected token in block: " + currentToken().value);
-                advance(); // Try to recover by advancing past the unexpected token
+                addError("Unexpected token '" + currentToken().value + "' in block at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                
+                while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::RBRACE && currentToken().type != TokenType::END) { advance(); }
+                if (currentToken().type == TokenType::SEMI) advance(); 
                 break;
         }
     }
     if (currentToken().type == TokenType::RBRACE) advance();
-    else if (currentToken().type != TokenType::END) { // If it's not RBRACE and not END, something is wrong
-        addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '}' at end of block");
+    else {
+        addError("Expected '}' at end of block at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
     }
     return block;
 }
@@ -657,91 +595,61 @@ std::unique_ptr<ASTNode> MiniCompiler::parseProgram() {
         switch (currentToken().type) {
             case TokenType::VAR:
                 if (auto decl = parseDeclaration()) program->addChild(std::move(decl));
-                else {
-                    // If parsing failed, advance to try to recover and find next statement
-                    // This is a simplistic error recovery.
-                    while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
-                }
+                else { /* Error already added by parseDeclaration, attempt recovery */ advance(); }
                 break;
             case TokenType::PRINT:
                 if (auto prt = parsePrint()) program->addChild(std::move(prt));
-                else {
-                     while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
-                }
+                else { /* Error already added by parsePrint, attempt recovery */ advance(); }
                 break;
             case TokenType::IF:
                 if (auto ifstmt = parseIfElse()) program->addChild(std::move(ifstmt));
-                else {
-                     while (currentToken().type != TokenType::RBRACE && currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::RBRACE) advance();
-                    if (currentToken().type == TokenType::SEMI) advance();
-                }
+                else { /* Error already added by parseIfElse, attempt recovery */ advance(); }
                 break;
             case TokenType::RETURN:
                 if (auto ret = parseReturn()) program->addChild(std::move(ret));
-                else {
-                     while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
-                }
+                else { /* Error already added by parseReturn, attempt recovery */ advance(); }
                 break;
-            case TokenType::ID: { // Handle assignment statements at program level
+            case TokenType::ID: 
+            {
                 std::string varName = currentToken().value;
                 advance();
                 if (currentToken().type != TokenType::ASSIGN) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected '=' for assignment");
-                    // Simple error recovery: advance until next semicolon or end
-                    while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
+                    addError("Expected '=' after identifier in assignment at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                    
+                    while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::LBRACE && currentToken().type != TokenType::END) { advance(); }
+                    if (currentToken().type == TokenType::SEMI) advance(); 
                     break;
                 }
-                advance(); // Skip '='
+                advance();
                 auto expr = parseExpression(0);
                 if (!expr) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Invalid expression in assignment");
-                    while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
+                    addError("Invalid expression in assignment to '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
                     break;
                 }
                 if (currentToken().type != TokenType::SEMI) {
-                    addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Expected ';' at end of assignment");
-                     while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::END) {
-                        advance();
-                    }
-                    if (currentToken().type == TokenType::SEMI) advance();
+                    addError("Expected ';' at end of assignment to '" + varName + "' at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
                     break;
                 }
-                advance(); // Skip ';'
+                advance();
                 auto assignNode = std::make_unique<ASTNode>("Assignment", varName);
                 assignNode->addChild(std::move(expr));
                 program->addChild(std::move(assignNode));
-                break;
             }
+            break;
             default:
-                addError("Line " + std::to_string(currentToken().line) + ", Column " + std::to_string(currentToken().column) + ": Unexpected token in program: " + currentToken().value);
-                advance(); // Try to recover by advancing past the unexpected token
+                addError("Unexpected token '" + currentToken().value + "' in program at line " + std::to_string(currentToken().line) + ", column " + std::to_string(currentToken().column));
+                
+                while (currentToken().type != TokenType::SEMI && currentToken().type != TokenType::LBRACE && currentToken().type != TokenType::END) { advance(); }
+                if (currentToken().type == TokenType::SEMI) advance(); 
                 break;
         }
     }
     return program;
 }
 
-
-std::string MiniCompiler::semanticAnalyzeExpression(ASTNode* node) {
-    if (!node) return "error";
+std::string MiniCompiler::getTypeOfExpression(ASTNode* node) {
+    if (!node) return "";
+    if (!node->dataType.empty()) return node->dataType;
 
     if (node->nodeType == "NumberLiteral") {
         node->dataType = "int";
@@ -752,45 +660,29 @@ std::string MiniCompiler::semanticAnalyzeExpression(ASTNode* node) {
         return "string";
     }
     else if (node->nodeType == "Identifier") {
-        if (!symbolExists(node->value)) {
-            addError("Undeclared variable '" + node->value + "' at line (unknown), column (unknown)."); // Line/Col info is lost here from token
-            return "error";
+        std::string type = getSymbolType(node->value);
+        if (type.empty()) {
+            addError("Undeclared variable '" + node->value + "'");
+            return "error"; 
         }
-        node->dataType = getSymbolType(node->value);
-        return node->dataType;
+        node->dataType = type;
+        return type;
     }
     else if (node->nodeType == "BinaryExpr") {
-        std::string leftType = semanticAnalyzeExpression(node->children[0].get());
-        std::string rightType = semanticAnalyzeExpression(node->children[1].get());
+        std::string leftType = getTypeOfExpression(node->children[0].get());
+        std::string rightType = getTypeOfExpression(node->children[1].get());
 
         if (leftType == "error" || rightType == "error") {
             return "error";
         }
-
-        if (leftType != rightType) {
-            addError("Type mismatch in binary expression '" + node->value + "': " + leftType + " vs " + rightType);
+        if (leftType != "int" || rightType != "int") {
+            addError("Type mismatch: Cannot perform '" + node->value + "' operation on non-integer types (" + leftType + " and " + rightType + ").");
             return "error";
         }
-
-        // For arithmetic ops, result is int. For comparison ops, result is bool (represented as int 0/1)
-        if (node->value == "+" || node->value == "-" || node->value == "*" || node->value == "/") {
-            if (leftType != "int") {
-                 addError("Arithmetic operations only supported for integers. Found " + leftType);
-                 return "error";
-            }
-            node->dataType = "int";
-            return "int";
-        } else if (node->value == "==" || node->value == "!=" || node->value == "<" || node->value == ">" || node->value == "<=" || node->value == ">=") {
-            // Comparisons can work on strings too if defined, but for now assume int comparison
-            if (leftType != "int") {
-                 addError("Comparison operations only supported for integers. Found " + leftType);
-                 return "error";
-            }
-            node->dataType = "int"; // Boolean result (0 or 1)
-            return "int";
-        }
+        node->dataType = "int"; 
+        return "int";
     }
-    return "error"; // Unhandled expression type
+    return ""; 
 }
 
 
@@ -806,144 +698,261 @@ void MiniCompiler::semanticAnalysis(ASTNode* node) {
         std::string varName = node->value;
         if (symbolExists(varName)) {
             addError("Variable '" + varName + "' already declared.");
-        } else {
-            // Determine type from initializer
-            if (!node->children.empty()) {
-                std::string exprType = semanticAnalyzeExpression(node->children[0].get());
-                if (exprType != "error") {
-                    addSymbol(varName, exprType);
-                    node->dataType = exprType; // Store type in the declaration node itself
-                } else {
-                    addSymbol(varName, "unknown"); // Mark as unknown if expr has error
-                }
-            } else {
-                // Default type for declarations without initializer (e.g., var x;)
-                // Assuming integer for now if no initializer, or could be "unknown"
-                addSymbol(varName, "int");
-                node->dataType = "int";
-            }
+            
         }
+
+        std::string assignedType = "";
+        if (!node->children.empty()) { 
+            semanticAnalysis(node->children[0].get()); 
+            assignedType = getTypeOfExpression(node->children[0].get()); 
+            if (assignedType == "error") { 
+                 
+                 return;
+            }
+        } else {
+            
+            assignedType = "int";
+        }
+
+        
+        addSymbol(varName, assignedType);
     }
     else if (node->nodeType == "Assignment") {
         std::string varName = node->value;
         if (!symbolExists(varName)) {
-            addError("Undeclared variable '" + varName + "' in assignment.");
+            addError("Undeclared variable '" + varName + "' cannot be assigned.");
             return;
         }
-        std::string varType = getSymbolType(varName);
-        std::string exprType = semanticAnalyzeExpression(node->children[0].get());
 
-        if (varType == "error" || exprType == "error") {
-            return; // Errors already reported by semanticAnalyzeExpression
+        semanticAnalysis(node->children[0].get()); 
+        std::string assignedType = getTypeOfExpression(node->children[0].get());
+        std::string declaredType = getSymbolType(varName);
+
+        if (assignedType == "error") { 
+             return; 
         }
-        if (varType != exprType) {
-            addError("Type mismatch in assignment for '" + varName + "': Expected " + varType + ", got " + exprType);
+
+        if (assignedType != declaredType) {
+            addError("Type mismatch: Cannot assign '" + assignedType + "' to variable '" + varName + "' of type '" + declaredType + "'.");
         }
+    }
+    else if (node->nodeType == "Identifier") {
+        
+        
+        if (!symbolExists(node->value)) {
+            addError("Undeclared variable '" + node->value + "' used.");
+        }
+        
+        node->dataType = getSymbolType(node->value);
+    }
+    else if (node->nodeType == "NumberLiteral") {
+        node->dataType = "int";
+    }
+    else if (node->nodeType == "StringLiteral") {
+        node->dataType = "string";
+    }
+    else if (node->nodeType == "BinaryExpr") {
+        
+        semanticAnalysis(node->children[0].get());
+        semanticAnalysis(node->children[1].get());
+        getTypeOfExpression(node); 
     }
     else if (node->nodeType == "Print") {
-        std::string exprType = semanticAnalyzeExpression(node->children[0].get());
-        if (exprType == "error") {
-            return; // Error already reported
-        }
-        // No specific type checking for print, as it can take int or string
-    }
-    else if (node->nodeType == "If" || node->nodeType == "IfElse") {
-        std::string condType = semanticAnalyzeExpression(node->children[0].get());
-        if (condType == "error") return;
-        if (condType != "int") { // Condition should evaluate to a boolean (represented as int)
-            addError("If condition must evaluate to an integer (boolean), found " + condType);
-        }
-        semanticAnalysis(node->children[1].get()); // Analyze if block
-        if (node->nodeType == "IfElse") {
-            semanticAnalysis(node->children[2].get()); // Analyze else block
-        }
+        semanticAnalysis(node->children[0].get()); 
+        std::string exprType = getTypeOfExpression(node->children[0].get());
+        
+        
+        node->dataType = exprType; 
     }
     else if (node->nodeType == "Return") {
-        semanticAnalyzeExpression(node->children[0].get()); // Just analyze, no specific return type check for now
+        semanticAnalysis(node->children[0].get());
+        
+        
     }
-    // No need to recurse for NumberLiteral, StringLiteral, Identifier, BinaryExpr
-    // as they are handled by semanticAnalyzeExpression which is called where needed.
+    else if (node->nodeType == "If" || node->nodeType == "IfElse") {
+        semanticAnalysis(node->children[0].get()); 
+        std::string condType = getTypeOfExpression(node->children[0].get());
+        if (condType == "error") return;
+        if (condType != "int") {
+            addError("If condition must be an integer (boolean) type, found '" + condType + "'.");
+        }
+
+        semanticAnalysis(node->children[1].get()); 
+        if (node->nodeType == "IfElse") {
+            semanticAnalysis(node->children[2].get()); 
+        }
+    }
 }
 
 
-std::string MiniCompiler::generateIntermediateCode(ASTNode* node, int& tempCount, int& labelCount) {
-    if (!node) return "";
+void MiniCompiler::generateIntermediateCode(ASTNode* node, int& tempCount, int& labelCount) {
+    if (!node) return;
 
     if (node->nodeType == "Program" || node->nodeType == "Block") {
         for (const auto& child : node->children) {
             generateIntermediateCode(child.get(), tempCount, labelCount);
         }
-        return "";
     }
     else if (node->nodeType == "Declaration") {
-        if (!node->children.empty()) {
-            std::string exprResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
-            addIntermediateCode(node->value + " = " + exprResult);
-        } else {
-            // Default initialization for integers, no default for strings
-            if (node->dataType == "int") {
-                addIntermediateCode(node->value + " = 0");
-            }
+        if (!node->children.empty()) { 
+            generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+            addIntermediateCode(node->value + " = " + node->children[0]->value);
+        } else { 
+            addIntermediateCode(node->value + " = 0");
         }
-        return "";
     }
     else if (node->nodeType == "Assignment") {
-        std::string exprResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
-        addIntermediateCode(node->value + " = " + exprResult);
-        return "";
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        addIntermediateCode(node->value + " = " + node->children[0]->value);
     }
-    else if (node->nodeType == "NumberLiteral" || node->nodeType == "StringLiteral" || node->nodeType == "Identifier") {
-        return node->value; // Return the literal value or identifier name
+    else if (node->nodeType == "NumberLiteral" || node->nodeType == "Identifier") {
+        
+    }
+    else if (node->nodeType == "StringLiteral") {
+        
+        std::string label = "str_L" + std::to_string(stringLiteralCount++);
+        stringLiteralsToLabels[node->value] = label; 
+        
+        node->value = label;
+        
+        
+        
+        
     }
     else if (node->nodeType == "BinaryExpr") {
-        std::string leftResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
-        std::string rightResult = generateIntermediateCode(node->children[1].get(), tempCount, labelCount);
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        generateIntermediateCode(node->children[1].get(), tempCount, labelCount);
 
         std::string resultTemp = "t" + std::to_string(tempCount++);
         addIntermediateCode(resultTemp + " = " +
-                            leftResult + " " +
-                            node->value + " " + // Operator
-                            rightResult);
-        node->value = resultTemp; // Store the temp variable name for parent nodes
-        return resultTemp;
+                            node->children[0]->value + " " +
+                            node->value + " " + 
+                            node->children[1]->value);
+        node->value = resultTemp; 
     }
     else if (node->nodeType == "Print") {
-        std::string exprResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
-        if (node->children[0]->dataType == "string") {
-            addIntermediateCode("print_string " + exprResult);
-        } else {
-            addIntermediateCode("print_int " + exprResult);
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        if (node->dataType == "int") {
+            needsPrintInt = true; 
+            addIntermediateCode("print_int " + node->children[0]->value);
+        } else if (node->dataType == "string") {
+            needsPrintString = true; 
+            addIntermediateCode("print_str " + node->children[0]->value);
         }
-        return "";
     }
     else if (node->nodeType == "Return") {
-        std::string exprResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
-        addIntermediateCode("return " + exprResult);
-        return "";
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        addIntermediateCode("return " + node->children[0]->value);
     }
     else if (node->nodeType == "If") {
-        std::string condResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
         std::string labelEnd = "L" + std::to_string(labelCount++);
-        addIntermediateCode("ifFalse " + condResult + " goto " + labelEnd);
-        generateIntermediateCode(node->children[1].get(), tempCount, labelCount); // If block
+        addIntermediateCode("ifFalse " + node->children[0]->value + " goto " + labelEnd);
+        generateIntermediateCode(node->children[1].get(), tempCount, labelCount); 
         addIntermediateCode(labelEnd + ":");
-        return "";
     }
     else if (node->nodeType == "IfElse") {
-        std::string condResult = generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
+        generateIntermediateCode(node->children[0].get(), tempCount, labelCount);
         std::string labelElse = "L" + std::to_string(labelCount++);
         std::string labelEnd = "L" + std::to_string(labelCount++);
-        addIntermediateCode("ifFalse " + condResult + " goto " + labelElse);
-        generateIntermediateCode(node->children[1].get(), tempCount, labelCount); // If block
+        addIntermediateCode("ifFalse " + node->children[0]->value + " goto " + labelElse);
+        generateIntermediateCode(node->children[1].get(), tempCount, labelCount); 
         addIntermediateCode("goto " + labelEnd);
         addIntermediateCode(labelElse + ":");
-        generateIntermediateCode(node->children[2].get(), tempCount, labelCount); // Else block
+        generateIntermediateCode(node->children[2].get(), tempCount, labelCount); 
         addIntermediateCode(labelEnd + ":");
-        return "";
     }
-    return "";
 }
 
+
+void MiniCompiler::generateDataSection() {
+    for (const std::string& varName : dataSectionVariables) {
+        addAssemblyCode(varName + " dd 0"); 
+    }
+    for (const auto& entry : stringLiteralsToLabels) {
+        
+        addAssemblyCode(entry.second + " db \"" + entry.first + "\", 0"); 
+    }
+}
+
+
+void MiniCompiler::generateRuntimeFunctions() {
+    if (needsPrintInt) {
+        addAssemblyCode("\nprint_int:");
+        addAssemblyCode("    push ebp");
+        addAssemblyCode("    mov ebp, esp");
+        addAssemblyCode("    sub esp, 16         ; Allocate buffer space for digits + sign + null");
+        addAssemblyCode("    mov ecx, esp        ; Buffer start (ECX as parameter for sys_write)");
+        addAssemblyCode("    mov edi, ecx        ; EDI for writing digits");
+        addAssemblyCode("    mov esi, 0          ; ESI for string length");
+        addAssemblyCode("    mov eax, [ebp + 8]  ; Get integer from stack (passed by push)");
+
+        addAssemblyCode("    cmp eax, 0");
+        addAssemblyCode("    jge .pint_pos_val");
+        addAssemblyCode("    mov byte [edi], '-'");
+        addAssemblyCode("    inc edi");
+        addAssemblyCode("    inc esi");
+        addAssemblyCode("    neg eax");
+        addAssemblyCode(".pint_pos_val:");
+        addAssemblyCode("    cmp eax, 0");
+        addAssemblyCode("    je .pint_zero_val");
+
+        addAssemblyCode("    push edi            ; Save edi for later (start of digits)");
+        addAssemblyCode(".pint_loop_div:");
+        addAssemblyCode("    xor edx, edx");
+        addAssemblyCode("    mov ebx, 10");
+        addAssemblyCode("    div ebx             ; EAX = quotient, EDX = remainder");
+        addAssemblyCode("    push dx             ; Push remainder (digit) to stack");
+        addAssemblyCode("    inc esi");
+        addAssemblyCode("    cmp eax, 0");
+        addAssemblyCode("    jne .pint_loop_div");
+
+        addAssemblyCode("    pop edi             ; Restore edi (start of digits)");
+        addAssemblyCode(".pint_loop_print:");
+        addAssemblyCode("    pop dx              ; Pop digit");
+        addAssemblyCode("    add dl, '0'");
+        addAssemblyCode("    mov byte [edi], dl");
+        addAssemblyCode("    inc edi");
+        addAssemblyCode("    dec esi             ; Decrement ESI (length counter)");
+        addAssemblyCode("    cmp esi, 0          ; Check if all digits popped");
+        addAssemblyCode("    jne .pint_loop_print");
+        addAssemblyCode("    jmp .pint_sys_write");
+
+        addAssemblyCode(".pint_zero_val:");
+        addAssemblyCode("    mov byte [edi], '0'");
+        addAssemblyCode("    inc edi");
+        addAssemblyCode("    inc esi");
+
+        addAssemblyCode(".pint_sys_write:");
+        addAssemblyCode("    mov eax, 4          ; sys_write");
+        addAssemblyCode("    mov ebx, 1          ; stdout");
+        addAssemblyCode("    mov ecx, esp        ; Correct ECX to point to the buffer start");
+        addAssemblyCode("    mov edx, esi        ; Length of string (ESI is correct here)");
+        addAssemblyCode("    int 0x80");
+        addAssemblyCode("    add esp, 16         ; Clean up buffer space");
+        addAssemblyCode("    pop ebp");
+        addAssemblyCode("    ret");
+    }
+
+    if (needsPrintString) {
+        addAssemblyCode("\nprint_string:");
+        addAssemblyCode("    push ebp");
+        addAssemblyCode("    mov ebp, esp");
+        addAssemblyCode("    mov ecx, [ebp + 8]  ; String address (passed by push) to ECX");
+        addAssemblyCode("    xor edx, edx        ; EDX = 0 (length counter)");
+        addAssemblyCode(".string_len_loop:");
+        addAssemblyCode("    cmp byte [ecx + edx], 0");
+        addAssemblyCode("    je .string_len_end");
+        addAssemblyCode("    inc edx");
+        addAssemblyCode("    jmp .string_len_loop");
+        addAssemblyCode(".string_len_end:");
+        addAssemblyCode("    mov eax, 4          ; sys_write");
+        addAssemblyCode("    mov ebx, 1          ; stdout");
+        addAssemblyCode("    int 0x80");
+        addAssemblyCode("    pop ebp");
+        addAssemblyCode("    ret");
+    }
+}
 
 void MiniCompiler::generateAssembly(ASTNode* node, int& regCount) {
     if (!node) return;
@@ -954,165 +963,131 @@ void MiniCompiler::generateAssembly(ASTNode* node, int& regCount) {
         }
     }
     else if (node->nodeType == "Declaration") {
-        // If there's an initializer, generate code for it
-        if (!node->children.empty()) {
-            if (node->children[0]->dataType == "int") {
-                if (node->children[0]->nodeType == "NumberLiteral") {
-                    addAssemblyCode("mov dword [" + node->value + "], " + node->children[0]->value);
-                } else { // Expression or Identifier
-                    generateAssembly(node->children[0].get(), regCount); // Result will be in eax
-                    addAssemblyCode("mov dword [" + node->value + "], eax");
-                }
-            } else if (node->children[0]->dataType == "string") {
-                if (node->children[0]->nodeType == "StringLiteral") {
-                    // For string literals, define them in .data section and assign their address
-                    static int string_literal_count = 0;
-                    std::string string_label = "str_lit_" + std::to_string(string_literal_count++);
-                    addAssemblyCode("section .data"); // Temporarily switch to data section
-                    addAssemblyCode(string_label + " db \"" + node->children[0]->value + "\", 0");
-                    addAssemblyCode("section .text"); // Switch back
-                    addAssemblyCode("mov dword [" + node->value + "], " + string_label); // Store address
-                } else if (node->children[0]->nodeType == "Identifier") {
-                    // Assigning one string variable to another
-                    addAssemblyCode("mov dword eax, [" + node->children[0]->value + "]");
-                    addAssemblyCode("mov dword [" + node->value + "], eax");
-                }
-            }
+        std::string varName = node->value;
+        
+        if (!node->children.empty()) { 
+            generateAssembly(node->children[0].get(), regCount); 
+            
+            addAssemblyCode("    mov dword [" + varName + "], eax");
         } else {
-            // Default initialization for variables without initializer
-            if (node->dataType == "int") {
-                addAssemblyCode("mov dword [" + node->value + "], 0");
-            }
-            // For string, might be null or empty string pointer, depending on language semantics
+            
         }
     }
     else if (node->nodeType == "Assignment") {
-        if (node->children[0]->dataType == "int") {
-            if (node->children[0]->nodeType == "NumberLiteral") {
-                addAssemblyCode("mov dword [" + node->value + "], " + node->children[0]->value);
-            } else { // Expression or Identifier
-                generateAssembly(node->children[0].get(), regCount); // Result in eax
-                addAssemblyCode("mov dword [" + node->value + "], eax");
-            }
-        } else if (node->children[0]->dataType == "string") {
-            if (node->children[0]->nodeType == "StringLiteral") {
-                static int string_literal_count = 0;
-                std::string string_label = "str_lit_assign_" + std::to_string(string_literal_count++);
-                addAssemblyCode("section .data");
-                addAssemblyCode(string_label + " db \"" + node->children[0]->value + "\", 0");
-                addAssemblyCode("section .text");
-                addAssemblyCode("mov dword [" + node->value + "], " + string_label);
-            } else if (node->children[0]->nodeType == "Identifier") {
-                addAssemblyCode("mov dword eax, [" + node->children[0]->value + "]");
-                addAssemblyCode("mov dword [" + node->value + "], eax");
-            }
-        }
+        std::string varName = node->value;
+        generateAssembly(node->children[0].get(), regCount); 
+        addAssemblyCode("    mov dword [" + varName + "], eax"); 
     }
     else if (node->nodeType == "NumberLiteral") {
-        addAssemblyCode("mov eax, " + node->value);
+        addAssemblyCode("    mov eax, " + node->value);
     }
     else if (node->nodeType == "StringLiteral") {
-        static int string_literal_count = 0;
-        std::string string_label = "str_lit_direct_" + std::to_string(string_literal_count++);
-        addAssemblyCode("section .data");
-        addAssemblyCode(string_label + " db \"" + node->value + "\", 0");
-        addAssemblyCode("section .text");
-        addAssemblyCode("lea eax, [" + string_label + "]"); // Load address into eax
+        
+        addAssemblyCode("    mov eax, " + node->value); 
     }
     else if (node->nodeType == "Identifier") {
-        if (getSymbolType(node->value) == "int") {
-            addAssemblyCode("mov eax, dword [" + node->value + "]");
-        } else if (getSymbolType(node->value) == "string") {
-            addAssemblyCode("mov eax, dword [" + node->value + "]"); // Load string address
+        
+        std::string varType = getSymbolType(node->value);
+        if (varType == "int" || varType == "string") { 
+            addAssemblyCode("    mov eax, [" + node->value + "]"); 
+        } else {
+            
+            addError("Internal Error: Unknown type for identifier '" + node->value + "' during assembly generation.");
         }
     }
     else if (node->nodeType == "BinaryExpr") {
         generateAssembly(node->children[0].get(), regCount);
-        addAssemblyCode("push eax");
+        addAssemblyCode("    push eax"); 
         generateAssembly(node->children[1].get(), regCount);
-        addAssemblyCode("mov ebx, eax");
-        addAssemblyCode("pop eax");
+        addAssemblyCode("    mov ebx, eax"); 
+        addAssemblyCode("    pop eax"); 
 
-        // Assuming only int-int operations for binary expressions for now
         if (node->value == "+") {
-            addAssemblyCode("add eax, ebx");
+            addAssemblyCode("    add eax, ebx");
         }
         else if (node->value == "-") {
-            addAssemblyCode("sub eax, ebx");
+            addAssemblyCode("    sub eax, ebx");
         }
         else if (node->value == "*") {
-            addAssemblyCode("imul eax, ebx");
+            addAssemblyCode("    imul eax, ebx");
         }
         else if (node->value == "/") {
-            addAssemblyCode("cdq");
-            addAssemblyCode("idiv ebx");
+            addAssemblyCode("    cdq                ; Extend EAX to EDX:EAX for division");
+            addAssemblyCode("    idiv ebx           ; EAX = EDX:EAX / EBX, EDX = remainder");
         }
+        
         else if (node->value == "<") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("setl al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    setl al            ; Set AL to 1 if less, 0 otherwise");
+            addAssemblyCode("    movzx eax, al      ; Zero-extend AL to EAX");
         }
         else if (node->value == ">") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("setg al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    setg al");
+            addAssemblyCode("    movzx eax, al");
         }
         else if (node->value == "<=") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("setle al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    setle al");
+            addAssemblyCode("    movzx eax, al");
         }
         else if (node->value == ">=") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("setge al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    setge al");
+            addAssemblyCode("    movzx eax, al");
         }
         else if (node->value == "==") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("sete al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    sete al");
+            addAssemblyCode("    movzx eax, al");
         }
         else if (node->value == "!=") {
-            addAssemblyCode("cmp eax, ebx");
-            addAssemblyCode("setne al");
-            addAssemblyCode("movzx eax, al");
+            addAssemblyCode("    cmp eax, ebx");
+            addAssemblyCode("    setne al");
+            addAssemblyCode("    movzx eax, al");
         }
     }
     else if (node->nodeType == "Print") {
-        generateAssembly(node->children[0].get(), regCount); // Value to print is in eax
-
-        if (node->children[0]->dataType == "string") {
-            addAssemblyCode("call print_string");
-        } else { // Assuming int
-            addAssemblyCode("call print_int");
+        generateAssembly(node->children[0].get(), regCount); 
+        addAssemblyCode("    push eax            ; Push value/address to print onto stack");
+        if (node->dataType == "int") {
+            addAssemblyCode("    call print_int");
+        } else if (node->dataType == "string") {
+            addAssemblyCode("    call print_string");
         }
+        addAssemblyCode("    add esp, 4          ; Clean up stack after call");
     }
     else if (node->nodeType == "Return") {
-        generateAssembly(node->children[0].get(), regCount);
-        addAssemblyCode("ret");
+        generateAssembly(node->children[0].get(), regCount); 
+        addAssemblyCode("    ; Note: For _start, 'ret' isn't typically used for program exit.");
+        addAssemblyCode("    ;       The final 'int 0x80' for sys_exit will handle it.");
+        addAssemblyCode("    ;       If 'return' is meant for functions, that's a different context.");
+        
+        addAssemblyCode("    mov ebx, eax        ; Move return value to EBX (exit code)");
+        addAssemblyCode("    mov eax, 1          ; sys_exit");
+        addAssemblyCode("    int 0x80");
     }
     else if (node->nodeType == "If") {
-        generateAssembly(node->children[0].get(), regCount);
-        std::string labelEnd = "L" + std::to_string(regCount++);
-        addAssemblyCode("cmp eax, 0");
-        addAssemblyCode("je " + labelEnd); // If condition is false (eax is 0), jump to end
-        generateAssembly(node->children[1].get(), regCount); // If block
+        generateAssembly(node->children[0].get(), regCount); 
+        std::string labelEnd = "L_END_IF_" + std::to_string(regCount++);
+        addAssemblyCode("    cmp eax, 0          ; Compare condition with 0");
+        addAssemblyCode("    je " + labelEnd + "  ; Jump if EAX is zero (false)");
+        generateAssembly(node->children[1].get(), regCount); 
         addAssemblyCode(labelEnd + ":");
     }
     else if (node->nodeType == "IfElse") {
-        generateAssembly(node->children[0].get(), regCount);
-        std::string labelElse = "L" + std::to_string(regCount++);
-        std::string labelEnd = "L" + std::to_string(regCount++);
-        addAssemblyCode("cmp eax, 0");
-        addAssemblyCode("je " + labelElse); // If condition is false (eax is 0), jump to else
-        generateAssembly(node->children[1].get(), regCount); // If block
-        addAssemblyCode("jmp " + labelEnd);
+        generateAssembly(node->children[0].get(), regCount); 
+        std::string labelElse = "L_ELSE_" + std::to_string(regCount++);
+        std::string labelEnd = "L_END_IFELSE_" + std::to_string(regCount++);
+        addAssemblyCode("    cmp eax, 0");
+        addAssemblyCode("    je " + labelElse); 
+        generateAssembly(node->children[1].get(), regCount); 
+        addAssemblyCode("    jmp " + labelEnd); 
         addAssemblyCode(labelElse + ":");
-        generateAssembly(node->children[2].get(), regCount); // Else block
+        generateAssembly(node->children[2].get(), regCount); 
         addAssemblyCode(labelEnd + ":");
     }
 }
-
 
 void MiniCompiler::printTokens() const {
     for (const auto& token : tokens) {
@@ -1136,7 +1111,7 @@ void MiniCompiler::printTokens() const {
             case TokenType::SEMI: std::cout << "SEMI"; break;
             case TokenType::END: std::cout << "END"; break;
         }
-        std::cout << " = " << token.value << std::endl;
+        std::cout << " = \"" << token.value << "\"" << std::endl;
     }
 }
 
@@ -1150,8 +1125,8 @@ void MiniCompiler::printErrors() const {
 void MiniCompiler::printAST(const ASTNode* node) const {
     if (!node) return;
     std::cout << std::string(node->indentLevel * 2, ' ') << node->nodeType;
-    if (!node->value.empty()) std::cout << " ('" << node->value << "')";
-    if (!node->dataType.empty()) std::cout << " <" << node->dataType << ">";
+    if (!node->value.empty()) std::cout << " (" << node->value << ")";
+    if (!node->dataType.empty()) std::cout << " [Type: " << node->dataType << "]";
     std::cout << std::endl;
     for (const auto& child : node->children) {
         printAST(child.get());
@@ -1179,10 +1154,10 @@ void MiniCompiler::printASTJSON(const ASTNode* node, std::ostream& out, int inde
     out << "\n" << std::string(indent, ' ') << "}";
 }
 
-// Main function
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <source_file.min>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <source_file.mini>" << std::endl;
         return 1;
     }
 
